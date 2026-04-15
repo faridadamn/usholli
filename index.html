@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usholli Admin — Kelola Artikel</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green:    #1A6E4A;
+    --green-lt: #E8F5EE;
+    --amber:    #F5A623;
+    --surface:  #F8F5F0;
+    --white:    #FFFFFF;
+    --text:     #1A1A1A;
+    --muted:    #6B7280;
+    --border:   #E8E0D6;
+    --red:      #EF4444;
+    --radius:   12px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--surface); color: var(--text); min-height: 100vh; }
+
+  /* ── Layout ── */
+  .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--green); padding: 0; position: sticky; top: 0; height: 100vh;
+             display: flex; flex-direction: column; }
+  .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid rgba(255,255,255,.12); }
+  .sidebar-logo h1 { color: #fff; font-size: 20px; font-weight: 700; }
+  .sidebar-logo p  { color: rgba(255,255,255,.6); font-size: 12px; margin-top: 2px; }
+  .sidebar-nav { padding: 16px 12px; flex: 1; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+              border-radius: 8px; color: rgba(255,255,255,.7); font-size: 14px;
+              cursor: pointer; transition: all .15s; margin-bottom: 4px; }
+  .nav-item:hover, .nav-item.active { background: rgba(255,255,255,.12); color: #fff; }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+
+  /* ── Main ── */
+  .main { padding: 32px; overflow-y: auto; }
+  .page-header { display: flex; align-items: center; justify-content: space-between;
+                 margin-bottom: 28px; }
+  .page-title { font-size: 22px; font-weight: 700; }
+  .page-sub   { color: var(--muted); font-size: 14px; margin-top: 2px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px;
+         border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+         border: none; transition: all .15s; }
+  .btn-primary { background: var(--green); color: #fff; }
+  .btn-primary:hover { background: #155a3b; }
+  .btn-outline { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { background: var(--surface); }
+  .btn-danger  { background: #FEE2E2; color: var(--red); border: 1px solid #FECACA; }
+  .btn-sm      { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+  .btn-amber   { background: var(--amber); color: #fff; }
+
+  /* ── Cards ── */
+  .card { background: var(--white); border-radius: 16px; border: 1px solid var(--border); padding: 20px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat-card  { background: var(--white); border-radius: 12px; border: 1px solid var(--border);
+                padding: 16px; }
+  .stat-num   { font-size: 28px; font-weight: 700; margin: 4px 0; }
+  .stat-label { font-size: 12px; color: var(--muted); font-weight: 500; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px 14px; color: var(--muted); font-size: 12px;
+       font-weight: 600; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface); }
+
+  /* ── Form ── */
+  .form-group { margin-bottom: 20px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
+  input[type=text], select, textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; font-size: 14px; font-family: inherit;
+    background: var(--white); color: var(--text); transition: border .15s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--green); }
+  textarea { min-height: 300px; resize: vertical; line-height: 1.7; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .editor-toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .toolbar-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+                 background: var(--white); cursor: pointer; font-size: 12px; font-family: monospace; }
+  .toolbar-btn:hover { background: var(--green-lt); border-color: var(--green); }
+
+  /* ── Badge ── */
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+           border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-green  { background: var(--green-lt); color: var(--green); }
+  .badge-amber  { background: #FEF3C7; color: #92400E; }
+  .badge-gray   { background: #F3F4F6; color: #6B7280; }
+
+  /* ── Modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45);
+                   display: flex; align-items: flex-start; justify-content: center;
+                   padding: 40px 20px; z-index: 100; overflow-y: auto; }
+  .modal { background: var(--white); border-radius: 20px; width: 100%; max-width: 780px;
+           padding: 28px; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  .modal-title  { font-size: 18px; font-weight: 700; }
+  .close-btn    { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+                  background: var(--white); cursor: pointer; font-size: 18px;
+                  display: flex; align-items: center; justify-content: center; }
+
+  /* ── Login ── */
+  .login-wrap { min-height: 100vh; display: flex; align-items: center;
+                justify-content: center; background: var(--surface); }
+  .login-card { background: var(--white); border-radius: 20px; border: 1px solid var(--border);
+                padding: 40px; width: 100%; max-width: 400px; }
+  .login-logo { text-align: center; margin-bottom: 28px; }
+  .login-logo h2 { font-size: 24px; font-weight: 700; color: var(--green); }
+  .login-logo p  { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+  /* ── Preview ── */
+  .preview-pane { border: 1px solid var(--border); border-radius: 10px; padding: 20px;
+                  min-height: 200px; font-size: 15px; line-height: 1.85; color: var(--text);
+                  background: var(--white); }
+  .preview-pane p  { margin-bottom: 14px; }
+  .preview-pane h1 { font-size: 20px; font-weight: 700; margin: 16px 0 8px; }
+  .preview-pane h2 { font-size: 17px; font-weight: 600; margin: 14px 0 6px; }
+  .preview-pane blockquote {
+    border-left: 3px solid var(--green); padding: 10px 14px; margin: 10px 0;
+    background: var(--green-lt); border-radius: 0 8px 8px 0; font-style: italic;
+    color: var(--muted);
+  }
+
+  .hidden { display: none !important; }
+  .text-muted { color: var(--muted); }
+  .mt-16 { margin-top: 16px; }
+  .flex-end { display: flex; justify-content: flex-end; gap: 10px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ───────────────────────────────────────────────────────────────── -->
+<div id="login-page" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">
+      <div style="font-size:40px;margin-bottom:8px">🕌</div>
+      <h2>Usholli Admin</h2>
+      <p>Panel pengelola konten masjid</p>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="text" id="email" placeholder="admin@masjid.com" value="">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="text" id="password" placeholder="••••••••" style="letter-spacing:2px">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px"
+            onclick="login()">Masuk</button>
+    <p id="login-error" class="hidden" style="color:var(--red);font-size:13px;margin-top:10px;text-align:center"></p>
+    <hr class="divider">
+    <p style="font-size:12px;color:var(--muted);text-align:center">
+      Belum punya akun? Daftar masjid kamu di
+      <a href="#" style="color:var(--green)">usholli.app/daftar</a>
+    </p>
+  </div>
+</div>
+
+<!-- ── DASHBOARD ───────────────────────────────────────────────────────────── -->
+<div id="dashboard" class="layout hidden">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <h1>🕌 Usholli</h1>
+      <p id="sidebar-masjid">Admin Panel</p>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPage('beranda')" id="nav-beranda">
+        <span class="icon">📊</span> Beranda
+      </div>
+      <div class="nav-item" onclick="showPage('artikel')" id="nav-artikel">
+        <span class="icon">📝</span> Artikel
+      </div>
+      <div class="nav-item" onclick="showPage('tulis')" id="nav-tulis">
+        <span class="icon">✏️</span> Tulis Artikel
+      </div>
+    </nav>
+    <div style="padding:16px 20px;border-top:1px solid rgba(255,255,255,.1)">
+      <button class="btn btn-outline btn-sm" onclick="logout()"
+              style="width:100%;justify-content:center;background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)">
+        Keluar
+      </button>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+
+    <!-- ── BERANDA ── -->
+    <div id="page-beranda">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Selamat datang 👋</div>
+          <div class="page-sub">Ringkasan konten masjid kamu</div>
+        </div>
+        <button class="btn btn-primary" onclick="showPage('tulis')">✏️ Tulis Artikel Baru</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Artikel</div>
+          <div class="stat-num" id="stat-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Diterbitkan</div>
+          <div class="stat-num" id="stat-published" style="color:var(--green)">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Draft</div>
+          <div class="stat-num" id="stat-draft" style="color:var(--amber)">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Views</div>
+          <div class="stat-num" id="stat-views">—</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="font-size:15px;font-weight:700;margin-bottom:16px">Artikel Terbaru</h3>
+        <div id="recent-list"><div class="empty-state"><div class="icon">📄</div><p>Memuat...</p></div></div>
+      </div>
+    </div>
+
+    <!-- ── ARTIKEL ── -->
+    <div id="page-artikel" class="hidden">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Kelola Artikel</div>
+          <div class="page-sub">Semua artikel masjid kamu</div>
+        </div>
+        <button class="btn btn-primary" onclick="showPage('tulis')">✏️ Tulis Baru</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Judul</th>
+                <th>Kategori</th>
+                <th>Status</th>
+                <th>Views</th>
+                <th>Likes</th>
+                <th>Tanggal</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="artikel-tbody">
+              <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── TULIS ── -->
+    <div id="page-tulis" class="hidden">
+      <div class="page-header">
+        <div>
+          <div class="page-title" id="form-title">✏️ Tulis Artikel Baru</div>
+          <div class="page-sub">Konten kamu akan langsung tampil di app jamaah</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
+        <!-- Form utama -->
+        <div>
+          <div class="card">
+            <div class="form-group">
+              <label>Judul Artikel *</label>
+              <input type="text" id="f-judul" placeholder="Contoh: Keutamaan Sholat Berjamaah">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Kategori *</label>
+                <select id="f-kategori">
+                  <option value="umum">📌 Umum</option>
+                  <option value="fiqih">📖 Fiqih</option>
+                  <option value="akidah">🌙 Akidah</option>
+                  <option value="akhlak">🤲 Akhlak</option>
+                  <option value="pengumuman">📢 Pengumuman</option>
+                  <option value="kajian">🕌 Kajian</option>
+                  <option value="ramadan">⭐ Ramadan</option>
+                  <option value="sosial">🤝 Sosial</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Tags (pisah koma)</label>
+                <input type="text" id="f-tags" placeholder="sholat, berjamaah, fardhu">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Ringkasan (preview di beranda)</label>
+              <input type="text" id="f-ringkasan" placeholder="2-3 kalimat singkat tentang isi artikel...">
+            </div>
+            <div class="form-group">
+              <label>URL Thumbnail (opsional)</label>
+              <input type="text" id="f-thumbnail" placeholder="https://...">
+            </div>
+          </div>
+
+          <div class="card mt-16">
+            <label style="margin-bottom:10px;display:block">Konten Artikel *</label>
+            <div class="editor-toolbar">
+              <button class="toolbar-btn" onclick="insertMd('# ', '')">H1</button>
+              <button class="toolbar-btn" onclick="insertMd('## ', '')">H2</button>
+              <button class="toolbar-btn" onclick="insertMd('> ', '')">Kutipan</button>
+              <button class="toolbar-btn" onclick="insertMd('\n\n', '')">¶ Paragraf</button>
+              <button class="toolbar-btn" onclick="togglePreview()" id="preview-toggle">👁 Preview</button>
+            </div>
+            <textarea id="f-konten" placeholder="Tulis konten artikel di sini...&#10;&#10;Gunakan # untuk heading, ## untuk sub-heading, dan > untuk kutipan.&#10;&#10;Pisahkan paragraf dengan baris kosong." oninput="updatePreview()"></textarea>
+            <div id="preview-pane" class="preview-pane hidden"></div>
+            <p style="font-size:11px;color:var(--muted);margin-top:6px">
+              Format: # Heading, ## Sub-heading, &gt; Kutipan, baris kosong = paragraf baru
+            </p>
+          </div>
+        </div>
+
+        <!-- Panel kanan: publish -->
+        <div>
+          <div class="card">
+            <h3 style="font-size:14px;font-weight:700;margin-bottom:14px">Publikasi</h3>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="f-status">
+                <option value="draft">📋 Simpan sebagai Draft</option>
+                <option value="publish">🚀 Terbitkan Sekarang</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Nama Penulis</label>
+              <input type="text" id="f-penulis" placeholder="Ustadz Abdullah">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+              <button class="btn btn-primary" onclick="simpanArtikel()" style="justify-content:center">
+                💾 Simpan Artikel
+              </button>
+              <button class="btn btn-outline" onclick="resetForm()" style="justify-content:center">
+                🔄 Reset
+              </button>
+            </div>
+            <p id="save-msg" class="hidden" style="font-size:13px;margin-top:10px;text-align:center;color:var(--green)"></p>
+          </div>
+
+          <div class="card mt-16">
+            <h3 style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--muted)">Tips menulis</h3>
+            <ul style="font-size:12px;color:var(--muted);line-height:1.8;padding-left:16px">
+              <li>Judul yang jelas & menarik</li>
+              <li>Ringkasan 2-3 kalimat</li>
+              <li>Paragraf pendek (3-5 baris)</li>
+              <li>Sertakan dalil / hadis</li>
+              <li>Tambahkan thumbnail foto</li>
+              <li>Gunakan kutipan untuk ayat/hadis</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MODAL EDIT ──────────────────────────────────────────────────────────── -->
+<div id="modal-edit" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit Artikel</div>
+      <button class="close-btn" onclick="tutupModal()">×</button>
+    </div>
+    <div class="form-group">
+      <label>Judul</label>
+      <input type="text" id="e-judul">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Kategori</label>
+        <select id="e-kategori">
+          <option value="umum">📌 Umum</option>
+          <option value="fiqih">📖 Fiqih</option>
+          <option value="akidah">🌙 Akidah</option>
+          <option value="akhlak">🤲 Akhlak</option>
+          <option value="pengumuman">📢 Pengumuman</option>
+          <option value="kajian">🕌 Kajian</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select id="e-status">
+          <option value="false">📋 Draft</option>
+          <option value="true">🚀 Diterbitkan</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Ringkasan</label>
+      <input type="text" id="e-ringkasan">
+    </div>
+    <div class="form-group">
+      <label>Konten</label>
+      <textarea id="e-konten" style="min-height:200px"></textarea>
+    </div>
+    <input type="hidden" id="e-id">
+    <div class="flex-end">
+      <button class="btn btn-outline" onclick="tutupModal()">Batal</button>
+      <button class="btn btn-primary" onclick="updateArtikel()">💾 Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG — ganti dengan nilai Supabase project kamu ─────────────────────────
+const SUPABASE_URL = 'https://khtzsccqjolhgwpwpido.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtodHpzY2Nxam9saGd3cHdwaWRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyMzYyMDgsImV4cCI6MjA5MTgxMjIwOH0.zpitqlQx0Cv2qeU2NN7xk1r-0EH5qscI9lGRUG4wnag';
+const MASJID_ID    = 'd9181ca7-b2f0-40c9-a2fe-889f5fcf8527'; // UUID masjid kamu di tabel masjid
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser  = null;
+let artikelCache = [];
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function login() {
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const errEl    = document.getElementById('login-error');
+
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+  if (error) {
+    errEl.textContent = 'Email atau password salah.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  currentUser = data.user;
+  masukDashboard();
+}
+
+async function masukDashboard() {
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  await muatArtikel();
+  hitungStats();
+}
+
+async function logout() {
+  await db.auth.signOut();
+  document.getElementById('dashboard').classList.add('hidden');
+  document.getElementById('login-page').classList.remove('hidden');
+}
+
+// Cek sesi aktif saat buka halaman
+db.auth.getSession().then(({ data }) => {
+  if (data.session) { currentUser = data.session.user; masukDashboard(); }
+});
+
+// ── Navigasi ──────────────────────────────────────────────────────────────────
+
+function showPage(name) {
+  ['beranda','artikel','tulis'].forEach(p => {
+    document.getElementById('page-' + p).classList.add('hidden');
+    document.getElementById('nav-'  + p).classList.remove('active');
+  });
+  document.getElementById('page-' + name).classList.remove('hidden');
+  document.getElementById('nav-'  + name).classList.add('active');
+}
+
+// ── Load artikel ──────────────────────────────────────────────────────────────
+
+async function muatArtikel() {
+  const { data, error } = await db
+    .from('artikel')
+    .select('*')
+    .eq('masjid_id', MASJID_ID)
+    .order('created_at', { ascending: false });
+
+  if (error) return console.error(error);
+  artikelCache = data || [];
+  renderTable();
+  renderRecent();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('artikel-tbody');
+  if (!artikelCache.length) {
+    tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="icon">📄</div><p>Belum ada artikel</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = artikelCache.map(a => `
+    <tr>
+      <td style="max-width:220px">
+        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.judul)}</div>
+        <div style="font-size:11px;color:var(--muted)">${escHtml(a.penulis_nama || 'Admin')}</div>
+      </td>
+      <td><span class="badge badge-gray">${escHtml(a.kategori_id || 'umum')}</span></td>
+      <td>
+        <span class="badge ${a.diterbitkan ? 'badge-green' : 'badge-amber'}">
+          ${a.diterbitkan ? '✅ Terbit' : '📋 Draft'}
+        </span>
+      </td>
+      <td>${a.view_count || 0}</td>
+      <td>${a.like_count || 0}</td>
+      <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${formatTgl(a.created_at)}</td>
+      <td>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-outline btn-sm" onclick="editArtikel('${a.id}')">Edit</button>
+          <button class="btn btn-sm ${a.diterbitkan ? 'btn-amber' : 'btn-primary'}"
+                  onclick="toggleTerbit('${a.id}', ${a.diterbitkan})">
+            ${a.diterbitkan ? 'Arsipkan' : 'Terbitkan'}
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="hapusArtikel('${a.id}')">Hapus</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderRecent() {
+  const el  = document.getElementById('recent-list');
+  const top = artikelCache.slice(0, 5);
+  if (!top.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">📝</div><p>Belum ada artikel. <a href="#" onclick="showPage(\'tulis\')" style="color:var(--green)">Tulis sekarang</a></p></div>';
+    return;
+  }
+  el.innerHTML = top.map(a => `
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(a.judul)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${formatTgl(a.created_at)} · ${a.view_count||0} views</div>
+      </div>
+      <span class="badge ${a.diterbitkan ? 'badge-green' : 'badge-amber'}">${a.diterbitkan ? 'Terbit' : 'Draft'}</span>
+    </div>
+  `).join('');
+}
+
+function hitungStats() {
+  const total     = artikelCache.length;
+  const published = artikelCache.filter(a => a.diterbitkan).length;
+  const draft     = total - published;
+  const views     = artikelCache.reduce((s, a) => s + (a.view_count || 0), 0);
+  document.getElementById('stat-total').textContent     = total;
+  document.getElementById('stat-published').textContent = published;
+  document.getElementById('stat-draft').textContent     = draft;
+  document.getElementById('stat-views').textContent     = views.toLocaleString('id');
+}
+
+// ── Tulis / Simpan ────────────────────────────────────────────────────────────
+
+async function simpanArtikel() {
+  const judul     = document.getElementById('f-judul').value.trim();
+  const konten    = document.getElementById('f-konten').value.trim();
+  const ringkasan = document.getElementById('f-ringkasan').value.trim();
+  const kategori  = document.getElementById('f-kategori').value;
+  const status    = document.getElementById('f-status').value;
+  const penulis   = document.getElementById('f-penulis').value.trim() || 'Admin';
+  const thumbnail = document.getElementById('f-thumbnail').value.trim();
+  const tagsRaw   = document.getElementById('f-tags').value.trim();
+  const tags      = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  if (!judul || !konten) { alert('Judul dan konten wajib diisi.'); return; }
+
+  const msgEl = document.getElementById('save-msg');
+  msgEl.textContent = 'Menyimpan...';
+  msgEl.classList.remove('hidden');
+
+  const { error } = await db.from('artikel').insert({
+    masjid_id:     MASJID_ID,
+    judul, konten, ringkasan,
+    kategori_id:   kategori,
+    penulis_nama:  penulis,
+    thumbnail_url: thumbnail || null,
+    diterbitkan:   status === 'publish',
+    tags,
+  });
+
+  if (error) {
+    msgEl.textContent = '❌ Gagal: ' + error.message;
+    msgEl.style.color = 'var(--red)';
+    return;
+  }
+
+  msgEl.textContent = '✅ Artikel berhasil disimpan!';
+  msgEl.style.color = 'var(--green)';
+  await muatArtikel();
+  hitungStats();
+  setTimeout(() => { msgEl.classList.add('hidden'); resetForm(); showPage('artikel'); }, 1500);
+}
+
+function resetForm() {
+  ['f-judul','f-konten','f-ringkasan','f-thumbnail','f-tags','f-penulis'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('f-status').value = 'draft';
+  document.getElementById('preview-pane').innerHTML = '';
+  document.getElementById('preview-pane').classList.add('hidden');
+  document.getElementById('f-konten').classList.remove('hidden');
+}
+
+// ── Edit ──────────────────────────────────────────────────────────────────────
+
+function editArtikel(id) {
+  const a = artikelCache.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('e-id').value        = id;
+  document.getElementById('e-judul').value     = a.judul;
+  document.getElementById('e-ringkasan').value = a.ringkasan || '';
+  document.getElementById('e-konten').value    = a.konten;
+  document.getElementById('e-kategori').value  = a.kategori_id || 'umum';
+  document.getElementById('e-status').value    = String(a.diterbitkan);
+  document.getElementById('modal-edit').classList.remove('hidden');
+}
+
+async function updateArtikel() {
+  const id = document.getElementById('e-id').value;
+  const { error } = await db.from('artikel').update({
+    judul:       document.getElementById('e-judul').value,
+    ringkasan:   document.getElementById('e-ringkasan').value,
+    konten:      document.getElementById('e-konten').value,
+    kategori_id: document.getElementById('e-kategori').value,
+    diterbitkan: document.getElementById('e-status').value === 'true',
+    updated_at:  new Date().toISOString(),
+  }).eq('id', id);
+
+  if (error) { alert('Gagal update: ' + error.message); return; }
+  tutupModal();
+  await muatArtikel();
+  hitungStats();
+}
+
+function tutupModal() {
+  document.getElementById('modal-edit').classList.add('hidden');
+}
+
+// ── Toggle terbitkan / arsipkan ───────────────────────────────────────────────
+
+async function toggleTerbit(id, current) {
+  await db.from('artikel').update({ diterbitkan: !current }).eq('id', id);
+  await muatArtikel();
+  hitungStats();
+}
+
+// ── Hapus ─────────────────────────────────────────────────────────────────────
+
+async function hapusArtikel(id) {
+  if (!confirm('Yakin ingin menghapus artikel ini? Tindakan tidak bisa dibatalkan.')) return;
+  await db.from('artikel').delete().eq('id', id);
+  await muatArtikel();
+  hitungStats();
+}
+
+// ── Editor helpers ────────────────────────────────────────────────────────────
+
+function insertMd(before, after) {
+  const ta  = document.getElementById('f-konten');
+  const s   = ta.selectionStart, e = ta.selectionEnd;
+  const sel = ta.value.substring(s, e);
+  ta.value  = ta.value.substring(0, s) + before + sel + after + ta.value.substring(e);
+  ta.focus();
+  ta.selectionStart = s + before.length;
+  ta.selectionEnd   = s + before.length + sel.length;
+  updatePreview();
+}
+
+function togglePreview() {
+  const ta  = document.getElementById('f-konten');
+  const pre = document.getElementById('preview-pane');
+  const btn = document.getElementById('preview-toggle');
+  if (pre.classList.contains('hidden')) {
+    pre.classList.remove('hidden');
+    ta.classList.add('hidden');
+    btn.textContent = '✏️ Edit';
+    updatePreview();
+  } else {
+    pre.classList.add('hidden');
+    ta.classList.remove('hidden');
+    btn.textContent = '👁 Preview';
+  }
+}
+
+function updatePreview() {
+  const raw = document.getElementById('f-konten').value;
+  document.getElementById('preview-pane').innerHTML = markdownLite(raw);
+}
+
+function markdownLite(text) {
+  return text.split('\n\n').map(p => {
+    if (p.startsWith('# '))  return `<h1>${escHtml(p.slice(2))}</h1>`;
+    if (p.startsWith('## ')) return `<h2>${escHtml(p.slice(3))}</h2>`;
+    if (p.startsWith('> '))  return `<blockquote>${escHtml(p.slice(2))}</blockquote>`;
+    return `<p>${escHtml(p)}</p>`;
+  }).join('');
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+
+function escHtml(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function formatTgl(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const m = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  return `${d.getDate()} ${m[d.getMonth()]} ${d.getFullYear()}`;
+}
+</script>
+</body>
+</html>
